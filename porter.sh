@@ -1,139 +1,164 @@
 #!/usr/bin/env bash
-set -e
+set -euo pipefail
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-source "$PROJECT_DIR/lib/checks.sh"
-source "$PROJECT_DIR/lib/device.sh"
-source "$PROJECT_DIR/lib/report.sh"
-
-COMMAND="${1:-help}"
-INPUT_DIR="$PROJECT_DIR/input"
-OUTPUT_DIR="$PROJECT_DIR/output"
 CONFIG_DIR="$PROJECT_DIR/configs"
 CONFIG_FILE="$CONFIG_DIR/target.conf"
 
+mkdir -p "$CONFIG_DIR"
+
+WORK_DIR_DEFAULT="$PROJECT_DIR/workspace"
+AOSP_PATH_DEFAULT=""
+STOCK_PATH_DEFAULT=""
+
+load_config() {
+  [[ -f "$CONFIG_FILE" ]] && source "$CONFIG_FILE" || true
+}
+
+save_config() {
+  cat > "$CONFIG_FILE" <<EOF
+SOC=${SOC:-}
+WORK_DIR=${WORK_DIR:-$WORK_DIR_DEFAULT}
+AOSP_PATH=${AOSP_PATH:-$AOSP_PATH_DEFAULT}
+STOCK_PATH=${STOCK_PATH:-$STOCK_PATH_DEFAULT}
+EOF
+}
+
 show_help() {
-  echo "Android ROM Porter CLI"
+  echo "Android ROM Porter - AOSP Build Assistant"
   echo ""
   echo "Uso:"
-  echo "  bash porter.sh init"
-  echo "  bash porter.sh check-env"
   echo "  bash porter.sh menu"
-  echo "  bash porter.sh select-platform --soc mtk|snapdragon"
-  echo "  bash porter.sh show-platform"
-  echo "  bash porter.sh scan --input ./input"
-  echo "  bash porter.sh probe-device"
-  echo "  bash porter.sh report"
+  echo "  bash porter.sh init-build"
+  echo "  bash porter.sh show-config"
 }
 
-parse_scan_args() {
-  shift || true
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --input) INPUT_DIR="$2"; shift 2 ;;
-      *) echo "[WARN] Argumento desconocido: $1"; shift ;;
-    esac
-  done
-}
-
-save_platform() {
-  local soc="$1"
-  mkdir -p "$CONFIG_DIR"
-  echo "SOC=$soc" > "$CONFIG_FILE"
-  echo "[OK] Plataforma seleccionada: $soc"
-  echo "[OK] Guardado en: $CONFIG_FILE"
-}
-
-select_platform() {
-  local soc=""
-  shift || true
-  while [[ $# -gt 0 ]]; do
-    case "$1" in
-      --soc) soc="$2"; shift 2 ;;
-      *) echo "[WARN] Argumento desconocido: $1"; shift ;;
-    esac
-  done
-
-  case "$soc" in
-    mtk|snapdragon) save_platform "$soc" ;;
-    *) echo "[ERROR] Debes indicar --soc mtk|snapdragon"; return 1 ;;
+select_soc_menu() {
+  echo "Selecciona plataforma:"
+  echo "1) MTK"
+  echo "2) Snapdragon"
+  read -rp "Opción: " opt
+  case "$opt" in
+    1) SOC="mtk" ;;
+    2) SOC="snapdragon" ;;
+    *) echo "[WARN] Opción inválida"; return 1 ;;
   esac
+  echo "[OK] SOC seleccionado: $SOC"
 }
 
-show_platform() {
-  if [[ -f "$CONFIG_FILE" ]]; then
-    # shellcheck disable=SC1090
-    source "$CONFIG_FILE"
-    echo "[OK] Plataforma actual: ${SOC:-no_definida}"
-  else
-    echo "[WARN] No hay plataforma configurada."
+ask_work_dir() {
+  read -rp "Ruta de trabajo (ej: /mnt/d/AndroidBuilds/proyecto1): " input
+  [[ -z "${input// }" ]] && input="$WORK_DIR_DEFAULT"
+  WORK_DIR="$input"
+  mkdir -p "$WORK_DIR"/{aosp,stock,out,logs,tmp}
+  echo "[OK] WORK_DIR: $WORK_DIR"
+}
+
+ask_rom_paths() {
+  echo ""
+  read -rp "Ruta ROM AOSP (zip/img/payload): " aosp_in
+  if [[ ! -e "$aosp_in" ]]; then
+    echo "[ERROR] No existe: $aosp_in"
+    return 1
   fi
+  AOSP_PATH="$aosp_in"
+
+  read -rp "Ruta ROM STOCK (zip/img/payload): " stock_in
+  if [[ ! -e "$stock_in" ]]; then
+    echo "[ERROR] No existe: $stock_in"
+    return 1
+  fi
+  STOCK_PATH="$stock_in"
+
+  echo "[OK] AOSP:  $AOSP_PATH"
+  echo "[OK] STOCK: $STOCK_PATH"
 }
 
-interactive_menu() {
+prepare_workspace() {
+  mkdir -p "$WORK_DIR"/{aosp,stock,out,logs,tmp}
+  cp -f "$AOSP_PATH" "$WORK_DIR/aosp/" 2>/dev/null || true
+  cp -f "$STOCK_PATH" "$WORK_DIR/stock/" 2>/dev/null || true
+  echo "[OK] Archivos copiados al workspace (si eran archivos)."
+}
+
+generate_plan() {
+  local plan="$WORK_DIR/logs/build_plan.txt"
+  cat > "$plan" <<EOF
+=== AOSP Build/Port Plan ===
+Fecha: $(date)
+SOC: ${SOC:-no_definido}
+WORK_DIR: ${WORK_DIR:-no_definido}
+AOSP_PATH: ${AOSP_PATH:-no_definido}
+STOCK_PATH: ${STOCK_PATH:-no_definido}
+
+Estructura:
+- $WORK_DIR/aosp
+- $WORK_DIR/stock
+- $WORK_DIR/out
+- $WORK_DIR/logs
+- $WORK_DIR/tmp
+
+Siguiente fase sugerida:
+1) Extraer AOSP y STOCK
+2) Comparar particiones (boot/vendor_boot/dtbo/super)
+3) Ajustar device tree + vendor blobs
+4) Ejecutar build y guardar salida en out/
+EOF
+  echo "[OK] Plan generado: $plan"
+}
+
+show_config() {
+  load_config
+  echo "SOC=${SOC:-}"
+  echo "WORK_DIR=${WORK_DIR:-$WORK_DIR_DEFAULT}"
+  echo "AOSP_PATH=${AOSP_PATH:-}"
+  echo "STOCK_PATH=${STOCK_PATH:-}"
+}
+
+init_build_flow() {
+  load_config
+  select_soc_menu
+  ask_work_dir
+  ask_rom_paths
+  prepare_workspace
+  save_config
+  generate_plan
+  echo "[OK] Flujo inicial completado."
+}
+
+menu() {
+  load_config
   while true; do
     echo ""
-    echo "==============================="
-    echo "   Android ROM Porter - Menu   "
-    echo "==============================="
-    echo "1) Seleccionar plataforma (MTK)"
-    echo "2) Seleccionar plataforma (Snapdragon)"
-    echo "3) Ver plataforma actual"
-    echo "4) Check entorno"
-    echo "5) Scan ROM (./input)"
-    echo "6) Probe device (adb)"
-    echo "7) Generar reporte"
+    echo "=========== AOSP Assistant ==========="
+    echo "1) Iniciar flujo completo (SOC + ruta + AOSP + STOCK)"
+    echo "2) Seleccionar SOC"
+    echo "3) Configurar ruta de trabajo"
+    echo "4) Seleccionar ROM AOSP y STOCK"
+    echo "5) Preparar workspace"
+    echo "6) Ver configuración"
+    echo "7) Generar plan"
     echo "0) Salir"
-    echo "-------------------------------"
-    read -rp "Elige una opción: " opt
-
+    echo "--------------------------------------"
+    read -rp "Elige opción: " opt
     case "$opt" in
-      1) save_platform "mtk" ;;
-      2) save_platform "snapdragon" ;;
-      3) show_platform ;;
-      4) check_environment || true ;;
-      5) scan_rom_files "$INPUT_DIR" "$OUTPUT_DIR" "$CONFIG_FILE" || true ;;
-      6) probe_device "$OUTPUT_DIR" || true ;;
-      7) generate_report "$OUTPUT_DIR" "$CONFIG_FILE" ;;
-      0) echo "Bye 👋"; break ;;
-      *) echo "[WARN] Opción inválida." ;;
+      1) init_build_flow ;;
+      2) select_soc_menu; save_config ;;
+      3) ask_work_dir; save_config ;;
+      4) ask_rom_paths; save_config ;;
+      5) prepare_workspace ;;
+      6) show_config ;;
+      7) generate_plan ;;
+      0) break ;;
+      *) echo "[WARN] Opción inválida" ;;
     esac
   done
 }
 
-case "$COMMAND" in
-  init)
-    mkdir -p "$PROJECT_DIR/input" "$PROJECT_DIR/output" "$PROJECT_DIR/lib" "$PROJECT_DIR/configs"
-    echo "[OK] Estructura inicial creada."
-    ;;
-  check-env)
-    check_environment
-    ;;
-  menu)
-    interactive_menu
-    ;;
-  select-platform)
-    select_platform "$@"
-    ;;
-  show-platform)
-    show_platform
-    ;;
-  scan)
-    parse_scan_args "$@"
-    scan_rom_files "$INPUT_DIR" "$OUTPUT_DIR" "$CONFIG_FILE"
-    ;;
-  probe-device)
-    probe_device "$OUTPUT_DIR"
-    ;;
-  report)
-    generate_report "$OUTPUT_DIR" "$CONFIG_FILE"
-    ;;
-  help|--help|-h)
-    show_help
-    ;;
-  *)
-    echo "[ERROR] Comando desconocido: $COMMAND"
-    show_help
-    exit 1
-    ;;
+case "${1:-menu}" in
+  menu) menu ;;
+  init-build) init_build_flow ;;
+  show-config) show_config ;;
+  help|--help|-h) show_help ;;
+  *) echo "[ERROR] Comando desconocido: $1"; show_help; exit 1 ;;
 esac
