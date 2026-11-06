@@ -12,6 +12,8 @@ source "$LIB_DIR/device.sh"
 source "$LIB_DIR/checks.sh"
 # shellcheck source=lib/report.sh
 source "$LIB_DIR/report.sh"
+# shellcheck source=lib/dandelionx.sh
+source "$LIB_DIR/dandelionx.sh"
 
 mkdir -p "$CONFIG_DIR"
 
@@ -40,6 +42,12 @@ KERNEL_DEFCONFIG=${KERNEL_DEFCONFIG:-$DEFAULT_DEFCONFIG}
 KERNEL_TOOLCHAIN_PATH=${KERNEL_TOOLCHAIN_PATH:-}
 KERNEL_WORK_BRANCH=${KERNEL_WORK_BRANCH:-}
 KERNEL_OUT_DIR=${KERNEL_OUT_DIR:-$KERNEL_OUT_DEFAULT}
+DX_PROFILE_NAME=${DX_PROFILE_NAME:-$DX_DEFAULT_NAME}
+DX_TAGLINE=${DX_TAGLINE:-$DX_DEFAULT_TAGLINE}
+DX_DEVICE=${DX_DEVICE:-$DX_DEFAULT_DEVICE}
+DX_SOC=${DX_SOC:-$DX_DEFAULT_SOC}
+DX_RAM=${DX_RAM:-$DX_DEFAULT_RAM}
+DX_KERNEL_VERSION=${DX_KERNEL_VERSION:-$DX_DEFAULT_KERNEL}
 EOF_CFG
 }
 
@@ -50,6 +58,7 @@ show_help() {
   echo "  bash porter.sh menu"
   echo "  bash porter.sh init-build"
   echo "  bash porter.sh kernel-build"
+  echo "  bash porter.sh dandelionx-init"
   echo "  bash porter.sh show-config"
 }
 
@@ -335,6 +344,20 @@ kernel_build_flow() {
   echo "[OK] Flujo kernel completado."
 }
 
+dandelionx_init_flow() {
+  load_config
+
+  if [[ -z "${WORK_DIR:-}" ]]; then
+    WORK_DIR="$WORK_DIR_DEFAULT"
+  fi
+  mkdir -p "$WORK_DIR"/{out,logs,tmp}
+
+  setup_dandelionx_profile
+  init_dandelionx_workspace
+
+  save_config
+}
+
 show_config() {
   load_config
   echo "SOC=${SOC:-}"
@@ -351,6 +374,12 @@ show_config() {
   echo "KERNEL_TOOLCHAIN_PATH=${KERNEL_TOOLCHAIN_PATH:-}"
   echo "KERNEL_WORK_BRANCH=${KERNEL_WORK_BRANCH:-}"
   echo "KERNEL_OUT_DIR=${KERNEL_OUT_DIR:-$KERNEL_OUT_DEFAULT}"
+  echo "DX_PROFILE_NAME=${DX_PROFILE_NAME:-$DX_DEFAULT_NAME}"
+  echo "DX_TAGLINE=${DX_TAGLINE:-$DX_DEFAULT_TAGLINE}"
+  echo "DX_DEVICE=${DX_DEVICE:-$DX_DEFAULT_DEVICE}"
+  echo "DX_SOC=${DX_SOC:-$DX_DEFAULT_SOC}"
+  echo "DX_RAM=${DX_RAM:-$DX_DEFAULT_RAM}"
+  echo "DX_KERNEL_VERSION=${DX_KERNEL_VERSION:-$DX_DEFAULT_KERNEL}"
 }
 
 init_build_flow() {
@@ -386,6 +415,7 @@ menu() {
     echo "14) Generar checklist flash/depuración"
     echo "15) Ejecutar flujo kernel completo"
     echo "16) Generar reporte de kernel"
+    echo "17) Inicializar DANDELION X EXTREME"
     echo "0) Salir"
     echo "-----------------------------------------------"
     read -rp "Elige opción: " opt
@@ -406,6 +436,7 @@ menu() {
       14) generate_flash_test_checklist ;;
       15) kernel_build_flow ;;
       16) generate_kernel_build_report ;;
+      17) dandelionx_init_flow ;;
       0) break ;;
       *) echo "[WARN] Opción inválida" ;;
     esac
@@ -416,6 +447,7 @@ case "${1:-menu}" in
   menu) menu ;;
   init-build) init_build_flow ;;
   kernel-build) kernel_build_flow ;;
+  dandelionx-init) dandelionx_init_flow ;;
   show-config) show_config ;;
   help|--help|-h) show_help ;;
   *) echo "[ERROR] Comando desconocido: $1"; show_help; exit 1 ;;
