@@ -27,7 +27,7 @@ load_config() {
   [[ -f "$CONFIG_FILE" ]] || return 0
 
   tmp_cfg="$(mktemp)"
-  grep -E '^(SOC|WORK_DIR|AOSP_PATH|STOCK_PATH|DEVICE_NAME|DEVICE_CODENAME|ANDROID_VERSION|MIUI_BASE|KERNEL_SOURCE_TYPE|KERNEL_SOURCE_PATH|KERNEL_DEFCONFIG|KERNEL_TOOLCHAIN_PATH|KERNEL_WORK_BRANCH|KERNEL_OUT_DIR|DX_PROFILE_NAME|DX_TAGLINE|DX_DEVICE|DX_SOC|DX_RAM|DX_KERNEL_VERSION)=' "$CONFIG_FILE" > "$tmp_cfg" || true
+  grep -E '^(SOC|WORK_DIR|AOSP_PATH|STOCK_PATH|DEVICE_NAME|DEVICE_CODENAME|ANDROID_VERSION|MIUI_BASE|KERNEL_SOURCE_TYPE|KERNEL_SOURCE_PATH|KERNEL_DEFCONFIG|KERNEL_TOOLCHAIN_PATH|KERNEL_WORK_BRANCH|KERNEL_OUT_DIR|DX_PROFILE_NAME|DX_TAGLINE|DX_DEVICE|DX_SOC|DX_RAM|DX_KERNEL_VERSION|DX_ANDROID_TARGETS)=' "$CONFIG_FILE" > "$tmp_cfg" || true
   # shellcheck source=/dev/null
   source "$tmp_cfg" || true
   rm -f "$tmp_cfg"
@@ -55,6 +55,7 @@ save_config() {
     printf 'DX_SOC=%q\n' "${DX_SOC:-$DX_DEFAULT_SOC}"
     printf 'DX_RAM=%q\n' "${DX_RAM:-$DX_DEFAULT_RAM}"
     printf 'DX_KERNEL_VERSION=%q\n' "${DX_KERNEL_VERSION:-$DX_DEFAULT_KERNEL}"
+    printf 'DX_ANDROID_TARGETS=%q\n' "${DX_ANDROID_TARGETS:-$DX_DEFAULT_ANDROID_TARGETS}"
   } > "$CONFIG_FILE"
 }
 
@@ -66,6 +67,7 @@ show_help() {
   echo "  bash porter.sh init-build"
   echo "  bash porter.sh kernel-build"
   echo "  bash porter.sh dandelionx-init"
+  echo "  bash porter.sh dandelionx-build-matrix"
   echo "  bash porter.sh show-config"
 }
 
@@ -365,6 +367,32 @@ dandelionx_init_flow() {
   save_config
 }
 
+dandelionx_build_matrix_flow() {
+  load_config
+  check_kernel_build_deps
+  validate_kernel_source_path
+
+  if [[ -z "${WORK_DIR:-}" ]]; then
+    WORK_DIR="$WORK_DIR_DEFAULT"
+  fi
+
+  local matrix_script
+  matrix_script="$WORK_DIR/dandelionx/matrix/build-matrix.sh"
+
+  if [[ ! -x "$matrix_script" ]]; then
+    echo "[INFO] No existe build matrix script, inicializando Dandelion X primero."
+    init_dandelionx_workspace
+  fi
+
+  if [[ ! -x "$matrix_script" ]]; then
+    echo "[ERROR] No se pudo preparar $matrix_script"
+    return 1
+  fi
+
+  export WORK_DIR KERNEL_SOURCE_PATH KERNEL_DEFCONFIG KERNEL_TOOLCHAIN_PATH DX_ANDROID_TARGETS
+  "$matrix_script"
+}
+
 show_config() {
   load_config
   echo "SOC=${SOC:-}"
@@ -387,6 +415,7 @@ show_config() {
   echo "DX_SOC=${DX_SOC:-$DX_DEFAULT_SOC}"
   echo "DX_RAM=${DX_RAM:-$DX_DEFAULT_RAM}"
   echo "DX_KERNEL_VERSION=${DX_KERNEL_VERSION:-$DX_DEFAULT_KERNEL}"
+  echo "DX_ANDROID_TARGETS=${DX_ANDROID_TARGETS:-$DX_DEFAULT_ANDROID_TARGETS}"
 }
 
 init_build_flow() {
@@ -423,6 +452,7 @@ menu() {
     echo "15) Ejecutar flujo kernel completo"
     echo "16) Generar reporte de kernel"
     echo "17) Inicializar DANDELION X EXTREME"
+    echo "18) Ejecutar build matrix Android (A15-A17)"
     echo "0) Salir"
     echo "-----------------------------------------------"
     read -rp "Elige opción: " opt
@@ -444,6 +474,7 @@ menu() {
       15) kernel_build_flow ;;
       16) generate_kernel_build_report ;;
       17) dandelionx_init_flow ;;
+      18) dandelionx_build_matrix_flow ;;
       0) break ;;
       *) echo "[WARN] Opción inválida" ;;
     esac
@@ -455,6 +486,7 @@ case "${1:-menu}" in
   init-build) init_build_flow ;;
   kernel-build) kernel_build_flow ;;
   dandelionx-init) dandelionx_init_flow ;;
+  dandelionx-build-matrix) dandelionx_build_matrix_flow ;;
   show-config) show_config ;;
   help|--help|-h) show_help ;;
   *) echo "[ERROR] Comando desconocido: $1"; show_help; exit 1 ;;

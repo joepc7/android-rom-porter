@@ -14,6 +14,7 @@ bash /home/runner/work/android-rom-porter/android-rom-porter/porter.sh menu
 - `bash porter.sh init-build` → flujo inicial ROM (workspace + rutas AOSP/STOCK + plan).
 - `bash porter.sh kernel-build` → flujo completo kernel para Redmi 9A.
 - `bash porter.sh dandelionx-init` → inicializa perfil y estructura **DANDELION X EXTREME**.
+- `bash porter.sh dandelionx-build-matrix` → compila matriz por versión Android (A15/A16/A17).
 - `bash porter.sh show-config` → muestra configuración actual.
 
 ## DANDELION X EXTREME
@@ -41,6 +42,18 @@ Motores incluidos:
 
 La IA se define como un motor ligero de decisiones (reglas + aprendizaje local), evitando un modelo generativo pesado residente en RAM.
 
+### Compatibilidad Android 15–17 (estrategia por versiones)
+
+- Targets soportados: `a15`, `a16`, `a17`.
+- Estructura por versión con separación de:
+  - parches comunes (`common/`)
+  - parches específicos por versión (`versions/<target>/`)
+  - `sepolicy`, `overlays`, `properties` por target
+- Política de estabilidad:
+  - `a15` y `a16`: **stable**
+  - `a17`: **experimental** (kernel 4.19)
+- Build matrix con artefactos etiquetados por versión para evitar flasheos cruzados.
+
 ## Flujo kernel implementado
 
 El flujo kernel cubre:
@@ -62,8 +75,15 @@ El flujo kernel cubre:
 - `workspace/out/package/pack_commands.sh`
 - `workspace/dandelionx/config/system_profile.conf`
 - `workspace/dandelionx/config/layers.conf`
+- `workspace/dandelionx/common/`
 - `workspace/dandelionx/engines/*.conf`
 - `workspace/dandelionx/logs/dandelionx_blueprint.txt`
+- `workspace/dandelionx/versions/a15/`
+- `workspace/dandelionx/versions/a16/`
+- `workspace/dandelionx/versions/a17/`
+- `workspace/dandelionx/matrix/plan.txt`
+- `workspace/dandelionx/matrix/validation-matrix.txt`
+- `workspace/dandelionx/matrix/build-matrix.sh`
 
 ## Notas
 
